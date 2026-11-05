@@ -128,7 +128,7 @@
           <div id="admin-login-section" class="hidden mt-4 pt-4 border-t border-gray-100">
             <form id="form-admin-login" class="space-y-3">
               <div>
-                <label class="block text-xs font-medium text-gray-600 mb-1" for="input-admin-pass">รหัสผ่านผู้ดูแลระบบ (ค่าเริ่มต้น: 1234)</label>
+                <label class="block text-xs font-medium text-gray-600 mb-1" for="input-admin-pass">รหัสผ่านผู้ดูแลระบบ</label>
                 <input id="input-admin-pass" type="password" class="w-full border border-gray-300 rounded-lg px-3.5 py-2 text-sm focus:ring-2 focus:ring-gray-700 outline-none" placeholder="กรอกรหัสผ่าน Admin">
               </div>
               <button type="submit" class="w-full py-2.5 bg-gray-800 text-white rounded-lg text-sm font-medium hover:bg-gray-900 transition">เข้าสู่ระบบ Admin</button>
@@ -14103,8 +14103,8 @@
           return memoryStore;
         }
       } catch (e) {}
+      // ถ้าไม่มีใน localStorage ใช้ seed ชั่วคราว แต่ไม่ push ไป cloud
       memoryStore = getSeedData();
-      saveStore(memoryStore);
       return memoryStore;
     }
 
@@ -14122,9 +14122,13 @@
     window.dataSdk = {
       async init(handler) {
         dataHandler = handler;
-        const data = loadStore();
-        if (dataHandler && typeof dataHandler.onDataChanged === 'function') {
-          dataHandler.onDataChanged(data.slice());
+        // cloud-first: ดึงข้อมูลจาก cloud ก่อนเสมอ ถ้าล้มเหลวค่อยใช้ local
+        const cloudOk = await syncFromCloud();
+        if (!cloudOk) {
+          const data = loadStore();
+          if (dataHandler && typeof dataHandler.onDataChanged === 'function') {
+            dataHandler.onDataChanged(data.slice());
+          }
         }
         return { isOk: true };
       },
@@ -14349,9 +14353,14 @@
       document.getElementById('admin-login-section').classList.toggle('hidden');
     });
 
-    document.getElementById('form-admin-login').addEventListener('submit', function(e) {
+    document.getElementById('form-admin-login').addEventListener('submit', async function(e) {
       e.preventDefault();
       const pass = document.getElementById('input-admin-pass').value;
+      const err = document.getElementById('admin-error');
+      // sync จาก cloud ก่อนเสมอ เพื่อให้ได้รหัสล่าสุด
+      err.textContent = 'กำลังตรวจสอบ...';
+      err.classList.remove('hidden');
+      await syncFromCloud();
       const adminPass = getAdminPassword();
       if (pass === adminPass) {
         currentRole = 'admin';
@@ -14360,11 +14369,10 @@
         renderAdminView();
         document.getElementById('admin-login-section').classList.add('hidden');
         document.getElementById('input-admin-pass').value = '';
-        document.getElementById('admin-error').classList.add('hidden');
+        err.classList.add('hidden');
         showToast('เข้าสู่ระบบผู้ดูแลระบบสำเร็จ', 'success');
       } else {
-        const err = document.getElementById('admin-error');
-        err.textContent = 'รหัสผ่านไม่ถูกต้อง (ค่าเริ่มต้น: 1234)';
+        err.textContent = 'รหัสผ่านไม่ถูกต้อง';
         err.classList.remove('hidden');
       }
     });
@@ -15593,6 +15601,11 @@
         statusEl.className = 'text-center text-xs text-red-600 font-medium';
         return;
       }
+
+      // sync จาก cloud ก่อนเพื่อป้องกันข้อมูลหาย
+      statusEl.textContent = 'กำลังบันทึก...';
+      statusEl.className = 'text-center text-xs text-gray-500 font-medium';
+      await syncFromCloud();
 
       const existingSetting = getRecords('setting').find(function(r) { return r.setting_key === 'admin_password'; });
       if (existingSetting) {
