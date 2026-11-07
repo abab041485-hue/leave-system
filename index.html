@@ -15691,16 +15691,10 @@
   </script>
 
   <script>
+    // ลงทะเบียน Service Worker เพื่อให้ติดตั้งเป็นแอปได้
+    // ไม่ reload อัตโนมัติ — ป้องกันหน้ากระพริบ
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('sw.js')
-        .then(function(reg) {
-          reg.addEventListener('updatefound', function() {
-            var nw = reg.installing;
-            nw.addEventListener('statechange', function() {
-              if (nw.state === 'activated') window.location.reload();
-            });
-          });
-        })
         .catch(function(e) { console.log('SW:', e); });
     }
   </script>
